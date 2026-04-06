@@ -1,0 +1,84 @@
+plugins {
+    id 'fabric-loom' version '1.13-SNAPSHOT'
+    id 'maven-publish'
+}
+
+// ── Version ───────────────────────────────────────────────────────────────────
+// mod_version is defined in gradle.properties.
+// The project version is set to mod_version here so all Gradle tasks
+// (jar, remapJar, sources jar) pick it up automatically.
+version = project.mod_version
+group   = project.maven_group
+
+// ── Archive naming ────────────────────────────────────────────────────────────
+// Output JAR name: jumpreset-v1.8.0.jar
+// The 'v' prefix is explicit so file managers / mod packs can sort correctly.
+// archivesName is the base name; Gradle appends '-${version}.jar' automatically.
+// Result: build/libs/jumpreset-1.8.0.jar  (Loom remaps to the final name)
+//
+// We override it in the remapJar task below to include the 'v' prefix.
+base {
+    archivesName = project.archives_base_name
+}
+
+// ── Repositories ──────────────────────────────────────────────────────────────
+repositories {
+}
+
+// ── Dependencies ──────────────────────────────────────────────────────────────
+dependencies {
+    minecraft   "com.mojang:minecraft:${project.minecraft_version}"
+    mappings    "net.fabricmc:yarn:${project.yarn_mappings}:v2"
+    modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
+    modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
+
+    // Gson is bundled with Minecraft — compileOnly to avoid double-bundling.
+    compileOnly "com.google.code.gson:gson:2.10.1"
+}
+
+// ── Resource processing ───────────────────────────────────────────────────────
+processResources {
+    inputs.property "version", project.version
+    filesMatching("fabric.mod.json") {
+        expand "version": project.version
+    }
+}
+
+// ── Java settings ─────────────────────────────────────────────────────────────
+tasks.withType(JavaCompile).configureEach {
+    it.options.release = 21
+}
+
+java {
+    withSourcesJar()
+    sourceCompatibility = JavaVersion.VERSION_21
+    targetCompatibility = JavaVersion.VERSION_21
+}
+
+// ── JAR naming ────────────────────────────────────────────────────────────────
+// Fabric Loom produces two jars:
+//   jar        → unobfuscated dev jar (build/libs/jumpreset-dev.jar)
+//   remapJar   → the real output jar (build/libs/jumpreset-VERSION.jar)
+//
+// We rename remapJar to include the 'v' prefix:
+//   jumpreset-v1.8.0.jar
+//
+// This is the file you copy into your mods/ folder.
+
+jar {
+    // Embed the LICENSE file in the dev jar (good practice).
+    from("LICENSE") {
+        rename { "${it}_${project.base.archivesName.get()}" }
+    }
+}
+
+// Rename the final remapped jar to: jumpreset-v{version}.jar
+// This runs automatically as part of every build — no manual step needed.
+remapJar {
+    archiveFileName = "${project.archives_base_name}-v${project.mod_version}.jar"
+}
+
+// Also rename the sources jar to match the versioning convention.
+tasks.named("sourcesJar") {
+    archiveFileName = "${project.archives_base_name}-v${project.mod_version}-sources.jar"
+}
