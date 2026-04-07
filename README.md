@@ -1,4 +1,4 @@
-# JumpReset v1.2.0
+# JumpReset v1.9.0
 
 Minecraft 1.21.11 · Fabric Loader ≥ 0.18.0 · Java 21
 
