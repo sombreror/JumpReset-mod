@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "id": "jumpreset",
+  "version": "${version}",
+  "name": "JumpReset",
+  "description": "PvP jump reset timing trainer with configurable HUD. Press K to open settings.",
+  "authors": ["JumpReset"],
+  "contact": {},
+  "license": "MIT",
+  "environment": "client",
+  "entrypoints": {
+    "client": [
+      "com.jumpreset.JumpResetMod"
+    ]
+  },
+  "mixins": [
+    "jumpreset.mixins.json"
+  ],
+  "depends": {
+    "fabricloader": ">=0.18.0",
+    "fabric-api": "*",
+    "minecraft": "~1.21.11"
+  }
+}
