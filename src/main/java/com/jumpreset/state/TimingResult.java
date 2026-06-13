@@ -13,7 +13,17 @@ import com.jumpreset.config.ModConfig;
  *  TOO_EARLY — jumped before hit registered             → red
  *  MISSED    — window expired before any jump           → (no HUD, silent)
  *
- * Scoring curve (asymmetric):
+ * Classification is threshold-based and matches both the {@link #hint} text
+ * and the on-screen "bar" zones exactly (every Timing-tab slider affects it):
+ *  ms < tooEarlyMs                 → TOO_EARLY ("jumped too early")
+ *  tooEarlyMs ≤ ms < perfectMs     → GOOD      ("a bit early")
+ *  perfectMs  ≤ ms ≤ perfectMaxMs  → PERFECT   ("perfect!")
+ *  perfectMaxMs < ms ≤ goodMaxMs   → GOOD      ("slightly late")
+ *  goodMaxMs    < ms ≤ lateMaxMs   → LATE      ("too late")
+ *  ms > lateMaxMs                  → MISSED    (silent)
+ *
+ * The numeric {@link #score} (used only for the score bar and session average)
+ * is a separate, smooth curve:
  *  ms < tooEarlyMs              → score = 0   (hard floor)
  *  tooEarlyMs ≤ ms < perfectMs  → linear ramp 0→1
  *  ms == perfectMs              → score = 1.0  (peak)
@@ -23,18 +33,16 @@ import com.jumpreset.config.ModConfig;
  */
 public enum TimingResult {
 
-    PERFECT  ("PERFECT",   0xFF00E87A),  // green
-    GOOD     ("GOOD",      0xFF00DDEE),  // cyan / celestino
-    LATE     ("LATE",      0xFFFF8800),  // orange
-    TOO_EARLY("TOO EARLY", 0xFFFF3333),  // red
-    MISSED   ("MISSED",    0xFF666666);  // grey — silent, rarely shown
+    PERFECT  ("PERFECT"),
+    GOOD     ("GOOD"),
+    LATE     ("LATE"),
+    TOO_EARLY("TOO EARLY"),
+    MISSED   ("MISSED");  // silent — never shown in the HUD
 
     public final String label;
-    public final int    color;
 
-    TimingResult(String label, int color) {
+    TimingResult(String label) {
         this.label = label;
-        this.color = color;
     }
 
     // ── Public API ────────────────────────────────────────────────────────────
@@ -49,18 +57,18 @@ public enum TimingResult {
         ModConfig cfg = ModConfig.get();
         double offset = ModConfig.pingOffset(pingMs);
 
-        double early   = cfg.tooEarlyMs  + offset;
-        double perfect = cfg.perfectMs   + offset;
-        double goodMax = cfg.goodMaxMs   + offset;
-        double lateMax = cfg.lateMaxMs   + offset;
+        double early      = cfg.tooEarlyMs   + offset;
+        double perfect    = cfg.perfectMs    + offset;
+        double perfectMax = cfg.perfectMaxMs + offset;
+        double goodMax    = cfg.goodMaxMs    + offset;
+        double lateMax    = cfg.lateMaxMs    + offset;
 
-        if (ms < early)   return TOO_EARLY;
-        if (ms > lateMax) return MISSED;
-
-        double s = score(ms, pingMs);
-        if (s >= 0.78) return PERFECT;
-        if (s >= 0.40) return GOOD;
-        return LATE;
+        if (ms < early)        return TOO_EARLY;
+        if (ms < perfect)      return GOOD;        // a bit early but acceptable
+        if (ms <= perfectMax)  return PERFECT;
+        if (ms <= goodMax)     return GOOD;        // slightly late
+        if (ms <= lateMax)     return LATE;
+        return MISSED;
     }
 
     /**
@@ -75,7 +83,9 @@ public enum TimingResult {
         double sigma     = cfg.scoreSigma;
 
         if (ms < early)  return 0.0;
-        if (ms < perfect) return (ms - early) / (perfect - early); // linear ramp
+        // Guard against a degenerate config where tooEarlyMs >= perfectMs.
+        double ramp = Math.max(1.0, perfect - early);
+        if (ms < perfect) return (ms - early) / ramp; // linear ramp
         double delta = ms - perfect;
         return Math.exp(-(delta * delta) / (2.0 * sigma * sigma)); // Gaussian tail
     }
@@ -106,8 +116,11 @@ public enum TimingResult {
         };
     }
 
-    /** True if this result should be shown in the HUD. MISSED is silent. */
+    /**
+     * Whether this result should be shown in the HUD. Every classification is
+     * shown except MISSED, which appears only when the user enables {@code showMissed}.
+     */
     public boolean shouldShow() {
-        return this != MISSED;
+        return this != MISSED || ModConfig.get().showMissed;
     }
 }

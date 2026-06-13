@@ -1,14 +1,15 @@
 package com.jumpreset.ui;
 
 import com.jumpreset.JumpResetMod;
+import com.jumpreset.config.FeedbackStyle;
 import com.jumpreset.config.ModConfig;
 import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.gui.Click;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.client.gui.widget.SliderWidget;
 import net.minecraft.text.Text;
-import org.lwjgl.glfw.GLFW;
 
 /**
  * ConfigScreen — v2.0.0
@@ -41,7 +42,6 @@ public class ConfigScreen extends Screen {
 
     // ── Drag state ────────────────────────────────────────────────────────────
     private boolean dragging = false;
-    private boolean prevLmb  = false;
     private double  dragOffX = 0, dragOffY = 0;
 
     // ── Colors ────────────────────────────────────────────────────────────────
@@ -68,7 +68,8 @@ public class ConfigScreen extends Screen {
     private static final int PREVIEW_H   = 44;   // HUD preview area height
 
     // Content start Y (inside panel, relative to panelY)
-    private int contentY; // set in init()
+    private int contentY;          // set in init()
+    private int generalTabEndY;    // Y just below the last General-tab widget
 
     public ConfigScreen(Screen parent) {
         super(Text.literal("JumpReset"));
@@ -126,14 +127,12 @@ public class ConfigScreen extends Screen {
         tog("Show Missed",    lx, y, bW, ModConfig.get().showMissed,      v -> ModConfig.get().showMissed = v);      y += GAP;
         tog("Lock HUD",       lx, y, bW, ModConfig.get().hudLocked,       v -> ModConfig.get().hudLocked = v);       y += GAP;
         tog("Debug Mode",     lx, y, bW, ModConfig.get().debugMode,       v -> ModConfig.get().debugMode = v);       y += GAP;
-        // Debug sub-type (only if debug on)
+        // Debug verbosity toggle (Full / Compact)
         addDrawableChild(ButtonWidget.builder(
-                Text.literal("Debug: " + ("full".equals(ModConfig.get().debugDisplayMode) ? "Full" : "Compact")),
+                Text.literal("Debug: " + ModConfig.get().debugDisplayMode.displayName()),
                 b -> {
-                    ModConfig.get().debugDisplayMode =
-                            "full".equals(ModConfig.get().debugDisplayMode) ? "compact" : "full";
-                    b.setMessage(Text.literal("Debug: " +
-                            ("full".equals(ModConfig.get().debugDisplayMode) ? "Full" : "Compact")));
+                    ModConfig.get().debugDisplayMode = ModConfig.get().debugDisplayMode.toggled();
+                    b.setMessage(Text.literal("Debug: " + ModConfig.get().debugDisplayMode.displayName()));
                 }).dimensions(lx, y, bW, BH).build()); y += GAP;
         sld("Knockback", lx, y, slW, ModConfig.get().knockbackThreshold, 0.01, 0.20,
                 v -> ModConfig.get().knockbackThreshold = v,
@@ -143,22 +142,19 @@ public class ConfigScreen extends Screen {
                 Text.literal("§cReset Session Stats"),
                 b -> JumpResetMod.tracker.sessionStats.reset())
                 .dimensions(lx, y, bW, BH).build());
+        generalTabEndY = y + BH;
     }
 
     private void buildDisplayTab(int lx, int y, int bW, int slW) {
-        String style      = ModConfig.get().feedbackStyle;
-        boolean isMinimal  = "minimal".equals(style);
-        boolean isDetailed = "detailed".equals(style);
+        FeedbackStyle style = ModConfig.get().feedbackStyle;
+        boolean isMinimal  = style == FeedbackStyle.MINIMAL;
+        boolean isDetailed = style == FeedbackStyle.DETAILED;
 
         // Style cycle — always visible; rebuilds tab on change to show/hide options
         addDrawableChild(ButtonWidget.builder(
-                Text.literal("Style: " + styleLabel(style)),
+                Text.literal("Style: " + style.displayName()),
                 b -> {
-                    ModConfig.get().feedbackStyle = switch (ModConfig.get().feedbackStyle) {
-                        case "minimal"  -> "detailed";
-                        case "detailed" -> "bar";
-                        default         -> "minimal";
-                    };
+                    ModConfig.get().feedbackStyle = ModConfig.get().feedbackStyle.next();
                     clearChildren(); init();
                 }).dimensions(lx, y, bW, BH).build()); y += GAP;
 
@@ -266,36 +262,45 @@ public class ConfigScreen extends Screen {
                 .dimensions(bx + (bW + gap) * 2, by, bW, BH).build());
     }
 
-    // ── Tick (drag handling) ──────────────────────────────────────────────────
+    // ── Drag handling (HUD preview repositioning) ─────────────────────────────
+    //
+    // Uses the Screen mouse events (coordinates already in scaled GUI space)
+    // instead of polling raw GLFW state every tick. Widgets get first refusal on
+    // every click, so buttons and sliders keep working even when they overlap the
+    // preview.
 
     @Override
-    public void tick() {
-        super.tick();
-        if (client == null || ModConfig.get().hudLocked) { dragging = false; prevLmb = false; return; }
-
-        long    win = client.getWindow().getHandle();
-        boolean lmb = GLFW.glfwGetMouseButton(win, GLFW.GLFW_MOUSE_BUTTON_LEFT) == GLFW.GLFW_PRESS;
-        double[] x = {0}, y = {0};
-        GLFW.glfwGetCursorPos(win, x, y);
-        double sc = client.getWindow().getScaleFactor();
-        double mx = x[0] / sc, my = y[0] / sc;
-
-        if (lmb && !prevLmb) {
+    public boolean mouseClicked(Click click, boolean doubled) {
+        if (super.mouseClicked(click, doubled)) return true;
+        double mx = click.x(), my = click.y();
+        if (click.button() == 0 && !ModConfig.get().hudLocked && inside((int) mx, (int) my, hudBounds())) {
             int[] b = hudBounds();
-            if (inside((int)mx, (int)my, b)) {
-                dragging = true; dragOffX = mx - b[0]; dragOffY = my - b[1];
-            }
+            dragging = true;
+            dragOffX = mx - b[0];
+            dragOffY = my - b[1];
+            return true;
         }
-        if (!lmb) dragging = false;
+        return false;
+    }
 
-        if (dragging) {
+    @Override
+    public boolean mouseDragged(Click click, double offsetX, double offsetY) {
+        if (dragging && click.button() == 0 && !ModConfig.get().hudLocked) {
             ModConfig cfg = ModConfig.get();
-            float s = cfg.hudScale;
-            int pw = (int)(JumpResetHud.BASE_W * s), ph = (int)(JumpResetHud.BASE_H * s);
-            cfg.hudX = clampF((float)((mx - dragOffX + pw * 0.5f) / width),  0.02f, 0.98f);
-            cfg.hudY = clampF((float)((my - dragOffY + ph * 0.5f) / height), 0.02f, 0.98f);
+            float s  = cfg.hudScale;
+            int   pw = (int) (JumpResetHud.BASE_W * s);
+            int   ph = (int) (JumpResetHud.BASE_H * s);
+            cfg.hudX = clampF((float) ((click.x() - dragOffX + pw * 0.5f) / width),  0.02f, 0.98f);
+            cfg.hudY = clampF((float) ((click.y() - dragOffY + ph * 0.5f) / height), 0.02f, 0.98f);
+            return true;
         }
-        prevLmb = lmb;
+        return super.mouseDragged(click, offsetX, offsetY);
+    }
+
+    @Override
+    public boolean mouseReleased(Click click) {
+        if (click.button() == 0) dragging = false;
+        return super.mouseReleased(click);
     }
 
     // ── Render ────────────────────────────────────────────────────────────────
@@ -373,14 +378,15 @@ public class ConfigScreen extends Screen {
      * Draw a compact session summary in the gap between the last General-tab
      * control and the HUD preview area.
      *
-     * Layout target: contentY + 8 * GAP + BH + 8 = just below the Reset Stats button.
-     * We draw two lines of small text (no widgets needed — pure drawText).
+     * Anchored just below the last General-tab widget ({@code generalTabEndY},
+     * captured in {@link #buildGeneralTab}) rather than a hardcoded row count, so
+     * it stays correct if the tab's controls change. We draw two lines of small
+     * text (no widgets needed — pure drawText).
      */
     private void renderSessionStats(DrawContext ctx) {
         var stats = JumpResetMod.tracker.sessionStats;
 
-        // Y position: below the last General tab row (8 items × GAP, then BH, then a small margin)
-        int statsY = contentY + 8 * GAP + BH + 6;
+        int statsY = generalTabEndY + 8;
         int lx     = panelX + CONTENT_PAD;
 
         if (stats.total() == 0) {
@@ -397,7 +403,7 @@ public class ConfigScreen extends Screen {
 
         // Line 2: hit rate, avg score, streak
         int hitCol = stats.hitRate() >= 70 ? 0xFF00E87A : stats.hitRate() >= 40 ? 0xFFFFCC00 : 0xFFFF5566;
-        String line2 = String.format("§7Hit: ");
+        String line2 = "§7Hit: ";
         ctx.drawText(textRenderer, Text.literal(line2), lx, statsY + 10, 0xFFFFFFFF, false);
         int offsetX = lx + textRenderer.getWidth(line2.replaceAll("§.", ""));
         String hitStr = String.format("%.0f%%", stats.hitRate());
@@ -434,14 +440,6 @@ public class ConfigScreen extends Screen {
                 cb.accept(mn + value * (mx2 - mn));
             }
         });
-    }
-
-    private static String styleLabel(String s) {
-        return switch (s) {
-            case "minimal"  -> "Minimal";
-            case "bar"      -> "Timing Bar";
-            default         -> "Detailed";
-        };
     }
 
     // ── Geometry helpers ──────────────────────────────────────────────────────

@@ -1,0 +1,15 @@
+# Normalize all text files to LF in the repository.
+* text=auto eol=lf
+
+# Java / build / resources are always LF.
+*.java   text eol=lf
+*.gradle text eol=lf
+*.json   text eol=lf
+*.md     text eol=lf
+*.properties text eol=lf
+
+# Windows-specific scripts must keep CRLF.
+*.bat    text eol=crlf
+
+# The Gradle wrapper jar is binary.
+*.jar    binary

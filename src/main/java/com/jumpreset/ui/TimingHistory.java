@@ -11,6 +11,10 @@ import net.minecraft.text.Text;
 import java.util.ArrayDeque;
 import java.util.Deque;
 
+import static com.jumpreset.util.RenderUtil.blendA;
+import static com.jumpreset.util.RenderUtil.border;
+import static com.jumpreset.util.RenderUtil.fill;
+
 /**
  * TimingHistory — v2.0.0 (logic unchanged from v1.5.0)
  *
@@ -109,18 +113,4 @@ public class TimingHistory {
     }
 
     public int size() { return history.size(); }
-
-    private static void fill(DrawContext ctx, int x, int y, int w, int h, int color) {
-        if (w > 0 && h > 0) ctx.fill(x, y, x+w, y+h, color);
-    }
-    private static void border(DrawContext ctx, int x, int y, int w, int h, int color) {
-        ctx.fill(x,     y,     x+w,   y+1,   color);
-        ctx.fill(x,     y+h-1, x+w,   y+h,   color);
-        ctx.fill(x,     y+1,   x+1,   y+h-1, color);
-        ctx.fill(x+w-1, y+1,   x+w,   y+h-1, color);
-    }
-    private static int blendA(int argb, int alpha) {
-        int ex = (argb >>> 24) & 0xFF;
-        return ((ex * alpha / 255) << 24) | (argb & 0x00FFFFFF);
-    }
 }

@@ -8,6 +8,8 @@ import com.jumpreset.state.TrackingState;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
 
+import static com.jumpreset.util.RenderUtil.blendA;
+
 /**
  * CrosshairIndicator — v2.0.0
  *
@@ -123,9 +125,5 @@ public class CrosshairIndicator {
         double phase = (nowMs % 666) / 666.0; // 0→1 over 666ms (~1.5 Hz)
         double sine  = Math.sin(phase * 2 * Math.PI);
         return 140 + (int)(sine * 57.5 + 57.5); // range [140, 255]
-    }
-
-    private static int blendA(int argb, int alpha) {
-        return (((argb >>> 24) & 0xFF) * alpha / 255 << 24) | (argb & 0x00FFFFFF);
     }
 }

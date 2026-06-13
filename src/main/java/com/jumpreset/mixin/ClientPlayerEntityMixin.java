@@ -10,80 +10,31 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 /**
- * ClientPlayerEntityMixin — v2.0.0 (logic unchanged from v1.8.0)
+ * ClientPlayerEntityMixin
  *
- * ── Why the v1.7.0 INVOKE approach silently failed ──────────────────────────
+ * <p>Captures the player's vertical velocity at the {@code HEAD} of
+ * {@link net.minecraft.entity.Entity#move} — i.e. <em>before</em> the physics
+ * engine resolves the movement for the tick. This is the raw impulse value:
+ * a vanilla ground jump sets {@code vy ≈ 0.42} (×jump-boost) and that value is
+ * present here before gravity/drag are applied.
  *
- * The previous version tried to inject at:
- *   INVOKE Lnet/minecraft/entity/LivingEntity;jump()V
- *   inside ClientPlayerEntity.tickMovement()
+ * <p>The actual jump detection lives in {@link com.jumpreset.state.JumpResetTracker},
+ * which compares this captured value against the previous tick's value
+ * (delta-vy) so it can fire reliably even on the same tick a hit lands.
  *
- * With require=0, Mixin silently no-ops if the call-site isn't found.
- * In MC 1.21.11, ClientPlayerEntity.tickMovement() likely delegates jump
- * handling upward through the call chain in a way Mixin couldn't match,
- * so jumpingThisTick was NEVER set → HUD never showed.
- *
- * ── Fix: velocity-signature detection inside move() HEAD ────────────────────
- *
- * The vanilla ground jump ALWAYS sets vy to exactly:
- *   0.42 * jumpBoostFactor  (≈ 0.42 without potion effects)
- * and applies it BEFORE move() is called.
- *
- * So at HEAD of move():
- *   - preMoveVy ≈ 0.42 (tight range: 0.38 – 0.50 to cover Jump Boost)
- *   - player.isOnGround() == true  (still touching ground this tick)
- *   - MovementType == SELF  (player-initiated, not entity push or piston)
- *
- * Knockback via Entity.takeKnockback() adds vy of ~0.36 at most, and arrives
- * as MovementType.SELF as well — BUT the player is typically already airborne
- * (isOnGround() == false) when knockback arrives, OR the vy is below 0.38.
- * The ground-check is the primary discriminator.
- *
- * In edge cases where knockback is applied while still on ground AND happens
- * to produce vy ≥ 0.38, the tracker has a secondary guard (hurtTime check)
- * to filter those out.
- *
- * This approach:
- *   ✓ Zero @Shadow fields → no refMap required → no crash possible
- *   ✓ Only uses public API: getVelocity(), isOnGround()
- *   ✓ Works with any MC version / obfuscation mapping
- *   ✓ Reliable: move() is called every tick physics runs, guaranteed
+ * <p>This injection is deliberately minimal:
+ * <ul>
+ *   <li>No {@code @Shadow} fields → no refMap required → cannot crash on mapping mismatch.</li>
+ *   <li>Only public API ({@code getVelocity()}) is used.</li>
+ *   <li>{@code move()} runs every physics tick, so the sample is guaranteed.</li>
+ * </ul>
  */
 @Mixin(ClientPlayerEntity.class)
 public class ClientPlayerEntityMixin {
 
-    /** Minimum vy that counts as a vanilla jump impulse (no potion = 0.42). */
-    private static final double JUMP_VY_MIN = 0.38;
-    /** Maximum vy: Jump Boost V gives ~0.78, so cap generously. */
-    private static final double JUMP_VY_MAX = 0.85;
-
-    /**
-     * Called at the HEAD of move() every physics tick.
-     *
-     * Captures preMoveVelocityY for the tracker.
-     *
-     * Also detects a real jump by the velocity signature:
-     *   vy in [JUMP_VY_MIN, JUMP_VY_MAX] + MovementType.SELF + isOnGround()
-     *
-     * Sets JumpResetMod.jumpingThisTick = true when all conditions hold.
-     * The tracker reads and clears this flag in END_CLIENT_TICK.
-     */
     @Inject(method = "move", at = @At("HEAD"))
     private void jumpreset$capturePreMove(MovementType type, Vec3d movement, CallbackInfo ci) {
-        ClientPlayerEntity self = (ClientPlayerEntity)(Object) this;
-        double vy = self.getVelocity().y;
-
-        // Always capture vy for the tracker (used for historical context).
-        JumpResetMod.preMoveVelocityY = vy;
-
-        // Detect jump: velocity signature + ground + player-initiated movement.
-        // MovementType.SELF covers normal walking/jumping.
-        // Knockback uses SELF too, but the player is usually airborne by then.
-        if (type == MovementType.SELF
-                && vy >= JUMP_VY_MIN
-                && vy <= JUMP_VY_MAX
-                && self.isOnGround()) {
-            JumpResetMod.jumpingThisTick = true;
-        }
+        ClientPlayerEntity self = (ClientPlayerEntity) (Object) this;
+        JumpResetMod.preMoveVelocityY = self.getVelocity().y;
     }
 }

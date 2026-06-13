@@ -13,27 +13,33 @@ package com.jumpreset.state;
  *  - best streak this session
  *  - cumulative score sum (for average computation)
  *
- * Thread safety: all writes happen on the client tick thread; reads from the
- * render thread are volatile-safe because primitives are word-sized or smaller.
+ * Thread safety: all writes happen on the client tick thread; the render thread
+ * reads these counters for display. Fields are {@code volatile} so the renderer
+ * always observes the latest published value. A render may catch the counters
+ * mid-update (e.g. {@code total} bumped before {@code perfect}); that is harmless
+ * for a transient on-screen readout and avoids any locking on the hot path.
  */
 public class SessionStats {
 
-    private int    total      = 0;
-    private int    perfect    = 0;
-    private int    good       = 0;
-    private int    late       = 0;
-    private int    tooEarly   = 0;
-    private int    streak     = 0;
-    private int    bestStreak = 0;
-    private double scoreSum   = 0.0;
+    private volatile int    total      = 0;
+    private volatile int    perfect    = 0;
+    private volatile int    good       = 0;
+    private volatile int    late       = 0;
+    private volatile int    tooEarly   = 0;
+    private volatile int    streak     = 0;
+    private volatile int    bestStreak = 0;
+    private volatile double scoreSum   = 0.0;
 
     // ── Write API (tick thread) ───────────────────────────────────────────────
 
     /**
      * Record a new result. Called from JumpResetTracker.dispatchResult().
-     * MISSED results never reach here (filtered before dispatchResult).
+     * MISSED is never counted — it represents a non-attempt, and including it
+     * would inflate {@code total} and reset streaks whenever "Show Missed" is on.
      */
     public void record(JumpResetResult result) {
+        if (result.classification() == TimingResult.MISSED) return;
+
         total++;
         scoreSum += result.score();
 

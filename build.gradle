@@ -11,12 +11,9 @@ version = project.mod_version
 group   = project.maven_group
 
 // ── Archive naming ────────────────────────────────────────────────────────────
-// Output JAR name: jumpreset-v1.8.0.jar
-// The 'v' prefix is explicit so file managers / mod packs can sort correctly.
 // archivesName is the base name; Gradle appends '-${version}.jar' automatically.
-// Result: build/libs/jumpreset-1.8.0.jar  (Loom remaps to the final name)
-//
-// We override it in the remapJar task below to include the 'v' prefix.
+// We override remapJar below to include an explicit 'v' prefix so file managers
+// and mod packs sort releases correctly, e.g. build/libs/jumpreset-v2.5.0.jar.
 base {
     archivesName = project.archives_base_name
 }
@@ -58,12 +55,9 @@ java {
 // ── JAR naming ────────────────────────────────────────────────────────────────
 // Fabric Loom produces two jars:
 //   jar        → unobfuscated dev jar (build/libs/jumpreset-dev.jar)
-//   remapJar   → the real output jar (build/libs/jumpreset-VERSION.jar)
+//   remapJar   → the real output jar, renamed below to jumpreset-v${version}.jar
 //
-// We rename remapJar to include the 'v' prefix:
-//   jumpreset-v1.8.0.jar
-//
-// This is the file you copy into your mods/ folder.
+// jumpreset-v${version}.jar is the file you copy into your mods/ folder.
 
 jar {
     // Embed the LICENSE file in the dev jar (good practice).

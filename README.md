@@ -4,7 +4,7 @@
 [![Fabric](https://img.shields.io/badge/Loader-Fabric%200.18%2B-ffb347)](#)
 [![Java](https://img.shields.io/badge/Java-21-orange?logo=openjdk&logoColor=white)](#)
 [![Environment](https://img.shields.io/badge/Environment-Client--side-blue)](#)
-[![Version](https://img.shields.io/badge/Version-v2.0.0-blueviolet)](#)
+[![Version](https://img.shields.io/badge/Version-v2.5.0-blueviolet)](#)
 [![License](https://img.shields.io/badge/License-MIT-lightgrey)](#)
 
 > **Accurate jump-reset feedback for PvP — powered by pre-physics velocity analysis.**
@@ -404,13 +404,89 @@ chmod +x gradlew
 ./gradlew build
 ```
 
-Output JAR: `build/libs/jumpreset-v2.0.0.jar`
+Output JAR: `build/libs/jumpreset-v2.5.0.jar`
 
 Uses Fabric Loom 1.14.10 and Gradle 9.2. Java toolchain is fixed to JDK 21.
 
 ---
 
 ## Changelog
+
+### v2.5.0
+
+A maintenance and code-quality release. No change to the detection pipeline or
+default feel; behaviour is the same except where noted as a fix.
+
+#### Bug Fixes
+
+**"Show Missed" now actually works**  
+The option was dead: `TimingResult.MISSED.shouldShow()` always returned `false`, so the
+missed-window result was built and then discarded. `shouldShow()` now returns `true` for
+MISSED when `showMissed` is enabled, and `SessionStats.record()` explicitly ignores MISSED
+so it never inflates totals or breaks streaks. With the option off (the default) behaviour
+is unchanged.
+
+**Timing sliders now drive classification**  
+`TimingResult.fromMillis()` previously labelled results from the Gaussian *score*
+(PERFECT ≥ 0.78, GOOD ≥ 0.40), so the *Perfect ≤* / *Good ≤* / *Late ≤* sliders and
+the on-screen "bar" zones did not actually control the PERFECT/GOOD/LATE verdict.
+Classification is now threshold-based and matches both the bar zones and the
+`hint()` text exactly: `tooEarlyMs → perfectMs → perfectMaxMs → goodMaxMs → lateMaxMs`.
+The Gaussian `score()` is retained solely for the score bar and the session average.
+
+**`score()` division-by-zero guard**  
+A config with `tooEarlyMs ≥ perfectMs` produced `NaN`/`∞` in the linear ramp.
+The denominator is now clamped to ≥ 1 ms.
+
+**Config validation on load**  
+`ModConfig.sanitize()` runs after every load, clamping all values to safe ranges
+and enforcing `tooEarlyMs < perfectMs ≤ perfectMaxMs ≤ goodMaxMs ≤ lateMaxMs`, plus
+validating the `feedbackStyle` / `debugDisplayMode` enums. A hand-edited or
+out-of-date config can no longer break classification or the HUD.
+
+**Config screen — session summary placement**  
+The General-tab session summary was positioned with a hardcoded row count and could
+overlap the HUD-preview area on smaller screens. It is now anchored to the actual
+end of the tab's controls.
+
+#### Refactoring
+
+- **`JumpResetTracker.tick()` decomposed.** The ~120-line method is now a small,
+  readable pipeline (`sample` → `detectJump` → `detectHit`/`handleHit` →
+  `checkWindowExpiry` → `checkJumpInWindow`) backed by an immutable per-tick
+  `Sample` record. Runtime behaviour is unchanged.
+- **Type-safe config enums.** The stringly-typed `feedbackStyle` (`"minimal"` /
+  `"detailed"` / `"bar"`) and `debugDisplayMode` (`"compact"` / `"full"`) are now
+  the `FeedbackStyle` and `DebugDisplayMode` enums, removing magic-string `switch`/
+  `equals` checks scattered across `JumpResetHud`, `ConfigScreen` and `ModConfig`.
+  `@SerializedName` keeps existing `jumpreset.json` files fully compatible.
+- **`TimingResult` slimmed.** Removed the dead `color` field and its constructor
+  argument (colours come from `configColor()` / `ModConfig`); dropped three unused
+  tracker getters.
+- **`ConfigScreen` drag handling** rewritten to use the idiomatic `Screen` mouse events
+  (`mouseClicked` / `mouseDragged` / `mouseReleased`) instead of polling raw GLFW state
+  every tick. Coordinates come already in GUI space, and widgets get first refusal on
+  every click, so buttons and sliders keep working even under the preview.
+- **HUD placement de-duplicated.** The repeated screen-size / clamp / slide-in code in
+  the three render styles and the preview now goes through shared `panelOrigin()` and
+  `slideInY()` helpers.
+
+#### Code Quality
+
+- **Removed dead code:** the `jumpingThisTick` flag and the mixin's velocity-signature
+  branch (cleared every tick and never read — detection uses delta-vy in the tracker),
+  and the unused `prevHorizMag` carry-over field. The mixin is now a minimal
+  velocity-capture injection.
+- **New `com.jumpreset.util.RenderUtil`:** the `fill` / `border` / `blendA` / scaled-text
+  primitives that were copy-pasted across `JumpResetHud`, `TimingHistory` and
+  `CrosshairIndicator` now live in one place.
+- **Logging:** replaced `System.err.println` with an SLF4J logger.
+- **`SessionStats`** counters are now `volatile` (read from the render thread), with the
+  thread-safety note corrected.
+- Added the `LICENSE` file (MIT, as declared in `fabric.mod.json`) and refreshed stale
+  build-script comments.
+
+---
 
 ### v2.0.0
 

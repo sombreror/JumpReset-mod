@@ -13,6 +13,7 @@ import net.fabricmc.fabric.api.client.rendering.v1.hud.VanillaHudElements;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.option.KeyBinding;
 import net.minecraft.client.util.InputUtil;
+import net.minecraft.text.Text;
 import net.minecraft.util.Identifier;
 import org.lwjgl.glfw.GLFW;
 
@@ -26,19 +27,10 @@ public class JumpResetMod implements ClientModInitializer {
     public static CrosshairIndicator crosshairIndicator;
 
     /**
-     * Pre-physics vy captured by mixin at HEAD of move().
-     * Written by the mixin; read + cleared in END_CLIENT_TICK.
+     * Pre-physics vy captured by the mixin at HEAD of move().
+     * Written by the mixin (physics tick); read by the tracker in END_CLIENT_TICK.
      */
-    public static volatile double  preMoveVelocityY = 0.0;
-
-    /**
-     * Set TRUE by the mixin's velocity-signature check inside move():
-     *   vy ∈ [0.38, 0.85] + MovementType.SELF + isOnGround()
-     * This fires only for real ground jumps. Knockback never satisfies
-     * all three conditions simultaneously.
-     * Read + cleared atomically at the start of END_CLIENT_TICK.
-     */
-    public static volatile boolean jumpingThisTick = false;
+    public static volatile double preMoveVelocityY = 0.0;
 
     private static KeyBinding openConfigKey;
     private static KeyBinding toggleFeedbackKey;
@@ -61,10 +53,6 @@ public class JumpResetMod implements ClientModInitializer {
                 InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_J, cat));
 
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
-            // jumpingThisTick is still written by the mixin (kept for
-            // compatibility) but jump detection now uses delta-vy in the tracker.
-            jumpingThisTick = false;
-
             if (client.player != null && client.world != null) {
                 tracker.tick(client);
             }
@@ -78,8 +66,7 @@ public class JumpResetMod implements ClientModInitializer {
                 ModConfig.get().enabled = nowEnabled;
                 if (client.player != null) {
                     client.player.sendMessage(
-                        net.minecraft.text.Text.literal(
-                            "[JumpReset] " + (nowEnabled ? "§aEnabled" : "§cDisabled")),
+                        Text.literal("[JumpReset] " + (nowEnabled ? "§aEnabled" : "§cDisabled")),
                         true);
                 }
             }

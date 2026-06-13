@@ -1,5 +1,7 @@
 package com.jumpreset.ui;
 
+import com.jumpreset.config.DebugDisplayMode;
+import com.jumpreset.config.FeedbackStyle;
 import com.jumpreset.config.ModConfig;
 import com.jumpreset.state.JumpResetResult;
 import com.jumpreset.state.TimingResult;
@@ -9,6 +11,10 @@ import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.font.TextRenderer;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.text.Text;
+
+import static com.jumpreset.util.RenderUtil.blendA;
+import static com.jumpreset.util.RenderUtil.border;
+import static com.jumpreset.util.RenderUtil.fill;
 
 /**
  * JumpResetHud — v2.0.0
@@ -83,9 +89,9 @@ public class JumpResetHud {
         if (alpha <= 0) { activeResult = null; return; }
 
         switch (cfg.feedbackStyle) {
-            case "minimal"  -> renderMinimal (ctx, client, cfg, elapsed, alpha);
-            case "bar"      -> renderBar     (ctx, client, cfg, elapsed, alpha);
-            default         -> renderDetailed(ctx, client, cfg, elapsed, alpha);
+            case MINIMAL -> renderMinimal (ctx, client, cfg, elapsed, alpha);
+            case BAR     -> renderBar     (ctx, client, cfg, elapsed, alpha);
+            default      -> renderDetailed(ctx, client, cfg, elapsed, alpha);
         }
     }
 
@@ -104,11 +110,7 @@ public class JumpResetHud {
         int          lw    = (int)(tr.getWidth(label) * scale);
 
         int cx = (int)(cfg.hudX * sw);
-        int cy = (int)(cfg.hudY * sh);
-        if (cfg.animateSlideIn) {
-            float t = Math.min(1f, elapsed / 120f);
-            cy += (int)((1f - Easing.easeOutCubic(t)) * 8 * scale);
-        }
+        int cy = (int)(cfg.hudY * sh) + slideInY(cfg, elapsed, 120f, 8f, scale);
 
         // Pill background
         int pillPadX = (int)(6 * scale), pillPadY = (int)(3 * scale);
@@ -126,18 +128,12 @@ public class JumpResetHud {
 
     private void renderDetailed(DrawContext ctx, MinecraftClient client,
                                 ModConfig cfg, long elapsed, int alpha) {
-        int   sw     = client.getWindow().getScaledWidth();
-        int   sh     = client.getWindow().getScaledHeight();
         float scale  = clampScale(cfg.hudScale);
         int   panelW = (int)(BASE_W * scale);
         int   panelH = computePanelH(cfg, scale);
-        int   panelX = clampX((int)(cfg.hudX * sw) - panelW / 2, panelW, sw);
-        int   panelY = clampY((int)(cfg.hudY * sh) - panelH / 2, panelH, sh);
-
-        if (cfg.animateSlideIn) {
-            float t = Math.min(1f, elapsed / 140f);
-            panelY += (int)((1f - Easing.easeOutCubic(t)) * 10 * scale);
-        }
+        int[] origin = panelOrigin(client, cfg, panelW, panelH);
+        int   panelX = origin[0];
+        int   panelY = origin[1] + slideInY(cfg, elapsed, 140f, 10f, scale);
 
         TimingResult cls    = activeResult.classification();
         int          accent = blendA(cls.configColor(), alpha);
@@ -188,18 +184,12 @@ public class JumpResetHud {
 
     private void renderBar(DrawContext ctx, MinecraftClient client,
                            ModConfig cfg, long elapsed, int alpha) {
-        int   sw     = client.getWindow().getScaledWidth();
-        int   sh     = client.getWindow().getScaledHeight();
         float scale  = clampScale(cfg.hudScale);
         int   panelW = (int)(BAR_W * scale);
         int   panelH = (int)(BAR_H * scale);
-        int   panelX = clampX((int)(cfg.hudX * sw) - panelW / 2, panelW, sw);
-        int   panelY = clampY((int)(cfg.hudY * sh) - panelH / 2, panelH, sh);
-
-        if (cfg.animateSlideIn) {
-            float t = Math.min(1f, elapsed / 140f);
-            panelY += (int)((1f - Easing.easeOutCubic(t)) * 8 * scale);
-        }
+        int[] origin = panelOrigin(client, cfg, panelW, panelH);
+        int   panelX = origin[0];
+        int   panelY = origin[1] + slideInY(cfg, elapsed, 140f, 8f, scale);
 
         TimingResult cls    = activeResult.classification();
         double       ms     = activeResult.millis();
@@ -295,7 +285,7 @@ public class JumpResetHud {
             if (e != null) ping = e.getLatency();
         }
         double offset = ModConfig.pingOffset(ping);
-        boolean full  = "full".equals(cfg.debugDisplayMode);
+        boolean full  = cfg.debugDisplayMode == DebugDisplayMode.FULL;
 
         TextRenderer tr = client.textRenderer;
         String l1, l2 = null, l3 = null;
@@ -348,20 +338,19 @@ public class JumpResetHud {
 
     public int[] renderPreview(DrawContext ctx, MinecraftClient client, boolean highlighted) {
         ModConfig cfg = ModConfig.get();
-        int   sw     = client.getWindow().getScaledWidth();
-        int   sh     = client.getWindow().getScaledHeight();
         float scale  = clampScale(cfg.hudScale);
 
         int panelW, panelH;
-        if ("bar".equals(cfg.feedbackStyle)) {
+        if (cfg.feedbackStyle == FeedbackStyle.BAR) {
             panelW = (int)(BAR_W * scale);
             panelH = (int)(BAR_H * scale);
         } else {
             panelW = (int)(BASE_W * scale);
             panelH = computePanelH(cfg, scale);
         }
-        int panelX = clampX((int)(cfg.hudX * sw) - panelW / 2, panelW, sw);
-        int panelY = clampY((int)(cfg.hudY * sh) - panelH / 2, panelH, sh);
+        int[] origin = panelOrigin(client, cfg, panelW, panelH);
+        int   panelX = origin[0];
+        int   panelY = origin[1];
 
         int bc = highlighted ? 0xFFFFFFAA : 0x8800CCEE;
         fill  (ctx, panelX, panelY, panelW, panelH, C_BG);
@@ -415,30 +404,24 @@ public class JumpResetHud {
 
     private static void drawText(DrawContext ctx, TextRenderer tr, String text,
                                   int x, int y, int color, float scale, boolean shadow) {
-        if (scale > 0.95f && scale < 1.05f) {
-            ctx.drawText(tr, Text.literal(text), x, y, color, shadow);
-        } else {
-            ctx.getMatrices().pushMatrix();
-            ctx.getMatrices().translate(x, y);
-            ctx.getMatrices().scale(scale, scale);
-            ctx.drawText(tr, Text.literal(text), 0, 0, color, shadow);
-            ctx.getMatrices().popMatrix();
-        }
+        com.jumpreset.util.RenderUtil.drawScaledText(ctx, tr, text, x, y, color, scale, shadow);
     }
 
-    private static void fill(DrawContext ctx, int x, int y, int w, int h, int c) {
-        if (w > 0 && h > 0) ctx.fill(x, y, x + w, y + h, c);
+    /** Clamped top-left origin {x, y} for a panel of the given size at the HUD anchor. */
+    private static int[] panelOrigin(MinecraftClient client, ModConfig cfg, int panelW, int panelH) {
+        int sw = client.getWindow().getScaledWidth();
+        int sh = client.getWindow().getScaledHeight();
+        return new int[] {
+                clampX((int)(cfg.hudX * sw) - panelW / 2, panelW, sw),
+                clampY((int)(cfg.hudY * sh) - panelH / 2, panelH, sh)
+        };
     }
 
-    private static void border(DrawContext ctx, int x, int y, int w, int h, int c) {
-        ctx.fill(x,     y,     x + w, y + 1, c);
-        ctx.fill(x,     y + h - 1, x + w, y + h, c);
-        ctx.fill(x,     y + 1, x + 1,     y + h - 1, c);
-        ctx.fill(x + w - 1, y + 1, x + w, y + h - 1, c);
-    }
-
-    private static int blendA(int argb, int alpha) {
-        return (((argb >>> 24) & 0xFF) * alpha / 255 << 24) | (argb & 0x00FFFFFF);
+    /** Vertical slide-in offset (px) at {@code elapsed} ms, or 0 when the animation is off. */
+    private static int slideInY(ModConfig cfg, long elapsed, float durationMs, float distance, float scale) {
+        if (!cfg.animateSlideIn) return 0;
+        float t = Math.min(1f, elapsed / durationMs);
+        return (int)((1f - Easing.easeOutCubic(t)) * distance * scale);
     }
 
     private static float clampScale(float s) { return Math.max(0.5f, Math.min(2.0f, s)); }

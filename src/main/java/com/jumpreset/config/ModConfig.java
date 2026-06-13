@@ -3,6 +3,8 @@ package com.jumpreset.config;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import net.fabricmc.loader.api.FabricLoader;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.io.Reader;
@@ -23,18 +25,18 @@ import java.nio.file.Path;
  */
 public class ModConfig {
 
+    private static final Logger LOGGER   = LoggerFactory.getLogger("JumpReset");
     private static final Gson   GSON     = new GsonBuilder().setPrettyPrinting().create();
     private static final String FILENAME = "jumpreset.json";
     private static ModConfig    INSTANCE = null;
 
     // ── General ───────────────────────────────────────────────────────────────
-    public boolean enabled         = true;
-    public boolean debugMode       = false;
-    public String  debugDisplayMode = "full"; // "compact" | "full"
+    public boolean          enabled          = true;
+    public boolean          debugMode        = false;
+    public DebugDisplayMode debugDisplayMode = DebugDisplayMode.FULL;
 
     // ── Feedback style ────────────────────────────────────────────────────────
-    // "minimal" | "detailed" | "bar"
-    public String feedbackStyle = "detailed";
+    public FeedbackStyle feedbackStyle = FeedbackStyle.DETAILED;
 
     // ── Timing thresholds (ms) ────────────────────────────────────────────────
     public double tooEarlyMs   = 15.0;
@@ -102,13 +104,14 @@ public class ModConfig {
                 INSTANCE = GSON.fromJson(r, ModConfig.class);
                 if (INSTANCE == null) INSTANCE = new ModConfig();
             } catch (IOException | com.google.gson.JsonSyntaxException e) {
-                System.err.println("[JumpReset] Config load failed, using defaults: " + e.getMessage());
+                LOGGER.warn("Config load failed, using defaults: {}", e.getMessage());
                 INSTANCE = new ModConfig();
             }
         } else {
             INSTANCE = new ModConfig();
             save();
         }
+        INSTANCE.sanitize();
     }
 
     public static void save() {
@@ -120,8 +123,48 @@ public class ModConfig {
                 GSON.toJson(INSTANCE, w);
             }
         } catch (IOException e) {
-            System.err.println("[JumpReset] Config save failed: " + e.getMessage());
+            LOGGER.error("Config save failed: {}", e.getMessage());
         }
+    }
+
+    /**
+     * Clamp values to sane ranges and enforce the monotonic ordering the timing
+     * model relies on ({@code tooEarlyMs < perfectMs ≤ perfectMaxMs ≤ goodMaxMs
+     * ≤ lateMaxMs}). Runs after every {@link #load()} so a hand-edited or
+     * out-of-date config file can never break classification or crash the HUD.
+     */
+    public void sanitize() {
+        // Timing thresholds: positive, and strictly/weakly increasing in order.
+        tooEarlyMs   = clamp(tooEarlyMs,   1,   500);
+        perfectMs    = Math.max(tooEarlyMs + 1, clamp(perfectMs,    1, 1000));
+        perfectMaxMs = Math.max(perfectMs,      clamp(perfectMaxMs, 1, 1500));
+        goodMaxMs    = Math.max(perfectMaxMs,   clamp(goodMaxMs,    1, 2000));
+        lateMaxMs    = Math.max(goodMaxMs,      clamp(lateMaxMs,    1, 3000));
+        scoreSigma   = clamp(scoreSigma, 1, 1000);
+
+        pingCompFactor     = clamp(pingCompFactor, 0, 1);
+        knockbackThreshold = clamp(knockbackThreshold, 0, 1);
+        jumpDeltaThreshold = clamp(jumpDeltaThreshold, 0.01, 1);
+        windowTicksGround  = (int) clamp(windowTicksGround, 1, 40);
+        windowTicksAir     = (int) clamp(windowTicksAir,    1, 40);
+
+        // HUD geometry / appearance.
+        hudX       = (float) clamp(hudX, 0, 1);
+        hudY       = (float) clamp(hudY, 0, 1);
+        hudScale   = (float) clamp(hudScale,   0.5, 2.0);
+        hudOpacity = (float) clamp(hudOpacity, 0.0, 1.0);
+        historyCount          = (int) clamp(historyCount, 1, 10);
+        displayDurationMs     = (int) clamp(displayDurationMs, 200, 10_000);
+        crosshairTriangleSize = (int) clamp(crosshairTriangleSize, 2, 12);
+        crosshairIndicatorY   = (int) clamp(crosshairIndicatorY, 0, 100);
+
+        // Gson leaves these null if the JSON holds an unrecognised value.
+        if (feedbackStyle == null)    feedbackStyle    = FeedbackStyle.DETAILED;
+        if (debugDisplayMode == null) debugDisplayMode = DebugDisplayMode.FULL;
+    }
+
+    private static double clamp(double v, double lo, double hi) {
+        return v < lo ? lo : v > hi ? hi : v;
     }
 
     /**
