@@ -3,7 +3,7 @@
   "id": "jumpreset",
   "version": "${version}",
   "name": "JumpReset",
-  "description": "PvP jump reset timing trainer with configurable HUD. Press K to open settings.",
+  "description": "Real-time jump reset timing feedback for PvP. Pre-physics jump detection, three HUD styles, crosshair indicator, session stats, and automatic ping compensation. Client-side only — press K to open settings.",
   "authors": ["sombreror"],
   "contact": {
     "homepage": "https://github.com/sombreror/JumpReset-mod",
