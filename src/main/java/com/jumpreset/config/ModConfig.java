@@ -13,15 +13,14 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 
 /**
- * ModConfig — v2.0.0
+ * GSON-backed mod configuration, persisted to {@code config/jumpreset.json}.
  *
- * Added in v1.9.0:
- *  - showCrosshairIndicator (triangle above crosshair)
- *  - crosshairTriangleSize (pixels, default 5)
- *  - crosshairIndicatorY   (vertical offset from crosshair center, default 12)
+ * <p>{@link #sanitize()} runs after every {@link #load()} and before every
+ * {@link #save()}, so neither a hand-edited file nor an in-game slider can
+ * produce values that break classification or the HUD.
  *
- * Note: jumpDeltaThreshold is still active — it gates the delta-vy jump
- * detection in JumpResetTracker (vyDelta >= cfg.jumpDeltaThreshold).
+ * <p>Note: jumpDeltaThreshold gates the delta-vy jump detection in
+ * JumpResetTracker ({@code vyDelta >= cfg.jumpDeltaThreshold}).
  */
 public class ModConfig {
 
@@ -103,7 +102,7 @@ public class ModConfig {
             try (Reader r = Files.newBufferedReader(path)) {
                 INSTANCE = GSON.fromJson(r, ModConfig.class);
                 if (INSTANCE == null) INSTANCE = new ModConfig();
-            } catch (IOException | com.google.gson.JsonSyntaxException e) {
+            } catch (IOException | RuntimeException e) {
                 LOGGER.warn("Config load failed, using defaults: {}", e.getMessage());
                 INSTANCE = new ModConfig();
             }
@@ -116,6 +115,7 @@ public class ModConfig {
 
     public static void save() {
         if (INSTANCE == null) return;
+        INSTANCE.sanitize(); // sliders can produce out-of-order thresholds
         try {
             Path path = configPath();
             Files.createDirectories(path.getParent());

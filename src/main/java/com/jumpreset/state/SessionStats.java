@@ -1,8 +1,6 @@
 package com.jumpreset.state;
 
 /**
- * SessionStats — v2.0.0
- *
  * Tracks aggregate statistics for the current play session.
  * Owned by JumpResetTracker; never persisted to disk (resets on game restart).
  *

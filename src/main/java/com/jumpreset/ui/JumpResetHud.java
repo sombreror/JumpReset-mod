@@ -1,7 +1,6 @@
 package com.jumpreset.ui;
 
 import com.jumpreset.config.DebugDisplayMode;
-import com.jumpreset.config.FeedbackStyle;
 import com.jumpreset.config.ModConfig;
 import com.jumpreset.state.JumpResetResult;
 import com.jumpreset.state.TimingResult;
@@ -17,19 +16,12 @@ import static com.jumpreset.util.RenderUtil.border;
 import static com.jumpreset.util.RenderUtil.fill;
 
 /**
- * JumpResetHud — v2.0.0
+ * Main timing HUD. Renders the active {@link JumpResetResult} in one of three
+ * styles (MINIMAL pill / DETAILED panel / BAR timing bar), plus the optional
+ * debug overlay, the history strip and the draggable config-screen preview.
  *
- * Changes from v1.7.0:
- *  - Debug overlay now includes a session stats line (attempts, hit rate, streak).
- *
- * Visual improvements (v1.7.0):
- *  - Cleaner color palette with proper alpha layering
- *  - Rounded-feel panel with subtle inner highlight line
- *  - Accent bar is now a gradient-feel gradient (3-px accent + 1-px highlight)
- *  - Bar style: smoother zone gradients, cleaner marker
- *  - Minimal style: small pill-shaped label with fade
- *  - Debug overlay: cleaner layout with icon prefix
- *  - All styles: consistent typography and spacing
+ * <p>Shared visual language: near-black navy panels with a 1-px border, an
+ * inner top highlight, a soft drop shadow, and a classification-colored accent.
  */
 public class JumpResetHud {
 
@@ -46,6 +38,7 @@ public class JumpResetHud {
     private static final int SCORE_H   = 3;
 
     // Color palette — dark navy theme
+    private static final int C_SHADOW      = 0x50000000;   // soft drop shadow
     private static final int C_BG          = 0xEA060612;   // near-black navy
     private static final int C_BORDER      = 0xFF1C1C35;   // subtle border
     private static final int C_HIGHLIGHT   = 0x18FFFFFF;   // inner top highlight
@@ -72,8 +65,10 @@ public class JumpResetHud {
     }
 
     public void render(DrawContext ctx, MinecraftClient client) {
-        ModConfig cfg     = ModConfig.get();
-        float     opacity = clamp01(cfg.hudOpacity);
+        ModConfig cfg = ModConfig.get();
+        if (!cfg.enabled) return; // nothing (debug/history included) while disabled
+
+        float opacity = clamp01(cfg.hudOpacity);
 
         if (cfg.debugMode) renderDebug(ctx, client, cfg);
 
@@ -116,6 +111,7 @@ public class JumpResetHud {
         int pillPadX = (int)(6 * scale), pillPadY = (int)(3 * scale);
         int pillW = lw + pillPadX * 2, pillH = (int)(10 * scale) + pillPadY * 2;
         int pillX = cx - pillW / 2, pillY = cy - pillH / 2;
+        fill(ctx, pillX + 1, pillY + 1, pillW, pillH, blendA(C_SHADOW, alpha));
         fill(ctx, pillX, pillY, pillW, pillH, blendA(C_BG, alpha));
         border(ctx, pillX, pillY, pillW, pillH, blendA(cls.configColor(), alpha / 3));
 
@@ -140,7 +136,8 @@ public class JumpResetHud {
         int          bgA    = blendA(C_BG, alpha);
         int          borA   = blendA(C_BORDER, alpha);
 
-        // Panel body
+        // Drop shadow + panel body
+        fill(ctx, panelX + 2, panelY + 2, panelW, panelH, blendA(C_SHADOW, alpha));
         fill(ctx, panelX, panelY, panelW, panelH, bgA);
         // Inner top highlight (glass feel)
         fill(ctx, panelX, panelY, panelW, Math.max(1, (int)(1 * scale)), blendA(C_HIGHLIGHT, alpha));
@@ -160,8 +157,7 @@ public class JumpResetHud {
             drawText(ctx, tr, cls.label, tx, ty, accent, scale, cfg.textShadow); ty += st;
         }
         if (cfg.showMs) {
-            String ms = String.format("%.0f ms", Math.max(0, activeResult.millis()));
-            drawText(ctx, tr, ms, tx, ty, blendA(C_MS, alpha), scale, cfg.textShadow); ty += st;
+            drawText(ctx, tr, msText(activeResult), tx, ty, blendA(C_MS, alpha), scale, cfg.textShadow); ty += st;
         }
         if (cfg.showHint) {
             String h = TimingResult.hint(activeResult.millis(), activeResult.pingMs());
@@ -196,6 +192,7 @@ public class JumpResetHud {
         double       ping   = activeResult.pingMs();
         double       offset = ModConfig.pingOffset(ping);
 
+        fill(ctx, panelX + 2, panelY + 2, panelW, panelH, blendA(C_SHADOW, alpha));
         fill(ctx, panelX, panelY, panelW, panelH, blendA(C_BG, alpha));
         fill(ctx, panelX, panelY, panelW, 1, blendA(C_HIGHLIGHT, alpha));
         border(ctx, panelX, panelY, panelW, panelH, blendA(C_BORDER, alpha));
@@ -207,48 +204,7 @@ public class JumpResetHud {
         int bh   = (int)(7 * scale);
         int by   = panelY + (int)(7 * scale);
 
-        double rangeStart   = cfg.tooEarlyMs  + offset;
-        double rangeEnd     = cfg.lateMaxMs   + offset;
-        double range        = Math.max(1, rangeEnd - rangeStart);
-        double perfectStart = cfg.perfectMs   + offset;
-        double perfectEnd   = cfg.perfectMaxMs + offset;
-        double goodEnd      = cfg.goodMaxMs   + offset;
-
-        int xPerfStart = bx + (int)(bw * ((perfectStart - rangeStart) / range));
-        int xPerfEnd   = bx + (int)(bw * ((perfectEnd   - rangeStart) / range));
-        int xGoodEnd   = bx + (int)(bw * ((goodEnd      - rangeStart) / range));
-        xPerfStart = clamp(xPerfStart, bx, bx + bw);
-        xPerfEnd   = clamp(xPerfEnd,   bx, bx + bw);
-        xGoodEnd   = clamp(xGoodEnd,   bx, bx + bw);
-
-        // Zone fills
-        fill(ctx, bx,         by, xPerfStart - bx,       bh, blendA(0xCC5C1111, alpha)); // early
-        fill(ctx, xPerfStart, by, xPerfEnd - xPerfStart,  bh, blendA(0xCC0F5C2E, alpha)); // perfect
-        fill(ctx, xPerfEnd,   by, xGoodEnd  - xPerfEnd,   bh, blendA(0xCC0F3050, alpha)); // good
-        fill(ctx, xGoodEnd,   by, bx + bw   - xGoodEnd,   bh, blendA(0xCC5C3000, alpha)); // late
-
-        // Zone borders
-        int sepA = blendA(0xFF2A3550, alpha);
-        fill(ctx, xPerfStart - 1, by, 1, bh, sepA);
-        fill(ctx, xPerfEnd   - 1, by, 1, bh, sepA);
-        fill(ctx, xGoodEnd   - 1, by, 1, bh, sepA);
-
-        // Bar outer border
-        border(ctx, bx, by, bw, bh, blendA(0xFF1A2030, alpha));
-
-        // ── Marker ────────────────────────────────────────────────────────
-        double clampedMs = Math.max(rangeStart, Math.min(rangeEnd, ms));
-        int    markerX   = bx + (int)(bw * ((clampedMs - rangeStart) / range));
-        markerX = clamp(markerX, bx, bx + bw - 1);
-
-        int markerCol = blendA(cls.configColor(), alpha);
-        // Drop shadow
-        fill(ctx, markerX - 1, by - 1, 4, bh + 2, blendA(0xFF000000, alpha / 2));
-        // Marker line
-        fill(ctx, markerX,     by, 2, bh, markerCol);
-        // Cap triangle above
-        fill(ctx, markerX - 1, by - 3, 4, 3, markerCol);
-        fill(ctx, markerX,     by - 4, 2, 1, blendA(cls.configColor(), alpha / 2));
+        drawTimingBar(ctx, cfg, bx, by, bw, bh, offset, ms, cls.configColor(), alpha);
 
         // ── Direction arrows ──────────────────────────────────────────────
         TextRenderer tr = client.textRenderer;
@@ -267,13 +223,62 @@ public class JumpResetHud {
             drawText(ctx, tr, label, panelX + panelW / 2 - lw / 2, ly, col, scale, cfg.textShadow);
         }
         if (cfg.showMs) {
-            String msStr = String.format("%.0f ms", Math.max(0, ms));
+            String msStr = msText(activeResult);
             int    mw    = (int)(tr.getWidth(msStr) * scale);
             drawText(ctx, tr, msStr, panelX + panelW - bPad - mw, ly,
                     blendA(C_MS, alpha), scale, cfg.textShadow);
         }
 
         history.render(ctx, client, panelX + panelW / 2, panelY + panelH + 4, cfg.hudOpacity);
+    }
+
+    /**
+     * Draw the zone bar (early/perfect/good/late fills, separators, outer
+     * border) and the timing marker. Shared by {@link #renderBar} and the
+     * config-screen preview.
+     *
+     * @param offset    ping offset added to every threshold
+     * @param ms        timing value the marker points at (clamped into range)
+     * @param markerRgb un-blended ARGB marker colour
+     * @param alpha     overall opacity [0, 255]
+     */
+    private static void drawTimingBar(DrawContext ctx, ModConfig cfg,
+                                      int bx, int by, int bw, int bh,
+                                      double offset, double ms, int markerRgb, int alpha) {
+        double rangeStart   = cfg.tooEarlyMs   + offset;
+        double rangeEnd     = cfg.lateMaxMs    + offset;
+        double range        = Math.max(1, rangeEnd - rangeStart);
+        double perfectStart = cfg.perfectMs    + offset;
+        double perfectEnd   = cfg.perfectMaxMs + offset;
+        double goodEnd      = cfg.goodMaxMs    + offset;
+
+        int xPerfStart = clamp(bx + (int)(bw * ((perfectStart - rangeStart) / range)), bx, bx + bw);
+        int xPerfEnd   = clamp(bx + (int)(bw * ((perfectEnd   - rangeStart) / range)), bx, bx + bw);
+        int xGoodEnd   = clamp(bx + (int)(bw * ((goodEnd      - rangeStart) / range)), bx, bx + bw);
+
+        // Zone fills
+        fill(ctx, bx,         by, xPerfStart - bx,        bh, blendA(0xCC5C1111, alpha)); // early
+        fill(ctx, xPerfStart, by, xPerfEnd   - xPerfStart, bh, blendA(0xCC0F5C2E, alpha)); // perfect
+        fill(ctx, xPerfEnd,   by, xGoodEnd   - xPerfEnd,   bh, blendA(0xCC0F3050, alpha)); // good
+        fill(ctx, xGoodEnd,   by, bx + bw    - xGoodEnd,   bh, blendA(0xCC5C3000, alpha)); // late
+
+        // Zone separators
+        int sepA = blendA(0xFF2A3550, alpha);
+        fill(ctx, xPerfStart - 1, by, 1, bh, sepA);
+        fill(ctx, xPerfEnd   - 1, by, 1, bh, sepA);
+        fill(ctx, xGoodEnd   - 1, by, 1, bh, sepA);
+
+        // Bar outer border
+        border(ctx, bx, by, bw, bh, blendA(0xFF1A2030, alpha));
+
+        // Marker
+        double clampedMs = Math.max(rangeStart, Math.min(rangeEnd, ms));
+        int    markerX   = clamp(bx + (int)(bw * ((clampedMs - rangeStart) / range)), bx, bx + bw - 1);
+        int    markerCol = blendA(markerRgb, alpha);
+        fill(ctx, markerX - 1, by - 1, 4, bh + 2, blendA(0xFF000000, alpha / 2)); // shadow
+        fill(ctx, markerX,     by,     2, bh,     markerCol);                     // line
+        fill(ctx, markerX - 1, by - 3, 4, 3,      markerCol);                     // cap
+        fill(ctx, markerX,     by - 4, 2, 1,      blendA(markerRgb, alpha / 2));  // cap glow
     }
 
     // ── DEBUG OVERLAY ─────────────────────────────────────────────────────────
@@ -312,7 +317,7 @@ public class JumpResetHud {
             }
         }
 
-        // Session stats line (v2.0.0)
+        // Session stats line
         var stats = JumpResetMod.tracker.sessionStats;
         if (stats.total() > 0) {
             l3   = String.format("sess %d  hit %.0f%%  streak %d (best %d)",
@@ -336,35 +341,77 @@ public class JumpResetHud {
 
     // ── PREVIEW (ConfigScreen) ────────────────────────────────────────────────
 
+    /**
+     * Draw a sample "PERFECT / 82 ms" panel at the configured HUD anchor,
+     * matching the active feedback style so what you drag is what you get.
+     *
+     * @return the drawn bounds {@code {x, y, w, h}} — the config screen uses
+     *         them as the drag hit-box.
+     */
     public int[] renderPreview(DrawContext ctx, MinecraftClient client, boolean highlighted) {
-        ModConfig cfg = ModConfig.get();
-        float scale  = clampScale(cfg.hudScale);
+        ModConfig    cfg   = ModConfig.get();
+        float        scale = clampScale(cfg.hudScale);
+        TextRenderer tr    = client.textRenderer;
 
         int panelW, panelH;
-        if (cfg.feedbackStyle == FeedbackStyle.BAR) {
-            panelW = (int)(BAR_W * scale);
-            panelH = (int)(BAR_H * scale);
-        } else {
-            panelW = (int)(BASE_W * scale);
-            panelH = computePanelH(cfg, scale);
+        switch (cfg.feedbackStyle) {
+            case BAR -> {
+                panelW = (int)(BAR_W * scale);
+                panelH = (int)(BAR_H * scale);
+            }
+            case MINIMAL -> {
+                panelW = (int)((tr.getWidth("PERFECT") + 12) * scale);
+                panelH = (int)(16 * scale);
+            }
+            default -> {
+                panelW = (int)(BASE_W * scale);
+                panelH = computePanelH(cfg, scale);
+            }
         }
         int[] origin = panelOrigin(client, cfg, panelW, panelH);
         int   panelX = origin[0];
         int   panelY = origin[1];
 
         int bc = highlighted ? 0xFFFFFFAA : 0x8800CCEE;
-        fill  (ctx, panelX, panelY, panelW, panelH, C_BG);
-        fill  (ctx, panelX, panelY, panelW, 1, C_HIGHLIGHT);
-        fill  (ctx, panelX, panelY, Math.max(1, (int)(ACCENT_W * scale)), panelH, cfg.colorPerfect);
-        border(ctx, panelX, panelY, panelW, panelH, bc);
+        fill(ctx, panelX + 2, panelY + 2, panelW, panelH, C_SHADOW);
+        fill(ctx, panelX, panelY, panelW, panelH, C_BG);
+        fill(ctx, panelX, panelY, panelW, 1, C_HIGHLIGHT);
 
-        TextRenderer tr = client.textRenderer;
-        int tx = panelX + (int)(PAD_X * scale);
-        int ty = panelY + (int)(PAD_Y * scale);
-        int st = (int)(LINE_H * scale);
-        if (cfg.showLabel) { drawText(ctx, tr, "PERFECT", tx, ty, cfg.colorPerfect, scale, false); ty += st; }
-        if (cfg.showMs)    { drawText(ctx, tr, "82 ms",   tx, ty, C_MS,             scale, false); ty += st; }
-        if (cfg.showHint)  { drawText(ctx, tr, "perfect!", tx, ty, C_HINT,          scale, false); }
+        switch (cfg.feedbackStyle) {
+            case BAR -> {
+                int bPad = (int)(8 * scale);
+                int bx   = panelX + bPad;
+                int bw   = panelW - bPad * 2;
+                int bh   = (int)(7 * scale);
+                int by   = panelY + (int)(7 * scale);
+                drawTimingBar(ctx, cfg, bx, by, bw, bh, 0, 82, cfg.colorPerfect, 255);
+                int ly = by + bh + (int)(4 * scale);
+                if (cfg.showLabel) {
+                    int lw = tr.getWidth("PERFECT");
+                    drawText(ctx, tr, "PERFECT", panelX + panelW / 2 - lw / 2, ly, cfg.colorPerfect, scale, false);
+                }
+                if (cfg.showMs) {
+                    int mw = (int)(tr.getWidth("82 ms") * scale);
+                    drawText(ctx, tr, "82 ms", panelX + panelW - bPad - mw, ly, C_MS, scale, false);
+                }
+            }
+            case MINIMAL -> {
+                int lw = (int)(tr.getWidth("PERFECT") * scale);
+                drawText(ctx, tr, "PERFECT",
+                        panelX + (panelW - lw) / 2, panelY + (int)(4 * scale),
+                        cfg.colorPerfect, scale, false);
+            }
+            default -> {
+                fill(ctx, panelX, panelY, Math.max(1, (int)(ACCENT_W * scale)), panelH, cfg.colorPerfect);
+                int tx = panelX + (int)(PAD_X * scale);
+                int ty = panelY + (int)(PAD_Y * scale);
+                int st = (int)(LINE_H * scale);
+                if (cfg.showLabel) { drawText(ctx, tr, "PERFECT",  tx, ty, cfg.colorPerfect, scale, false); ty += st; }
+                if (cfg.showMs)    { drawText(ctx, tr, "82 ms",    tx, ty, C_MS,             scale, false); ty += st; }
+                if (cfg.showHint)  { drawText(ctx, tr, "perfect!", tx, ty, C_HINT,           scale, false); }
+            }
+        }
+        border(ctx, panelX, panelY, panelW, panelH, bc);
 
         if (highlighted) {
             ctx.drawText(tr, Text.literal("§e⇥ drag to move"), panelX + 2, panelY - 12, 0xFFFFFFFF, false);
@@ -380,9 +427,20 @@ public class JumpResetHud {
         int   sw    = client.getWindow().getScaledWidth();
         int   sh    = client.getWindow().getScaledHeight();
         float scale = clampScale(cfg.hudScale);
-        int   cx    = (int)(cfg.hudX * sw);
-        int   cy    = (int)(cfg.hudY * sh) + (int)(BASE_H * scale / 2) + 4;
+        int   halfH = switch (cfg.feedbackStyle) {
+            case BAR     -> (int)(BAR_H * scale / 2);
+            case MINIMAL -> (int)(8 * scale);
+            default      -> computePanelH(cfg, scale) / 2;
+        };
+        int cx = (int)(cfg.hudX * sw);
+        int cy = (int)(cfg.hudY * sh) + halfH + 4;
         history.render(ctx, client, cx, cy, opacity);
+    }
+
+    /** Millisecond readout for a result; MISSED has no meaningful timing. */
+    private static String msText(JumpResetResult result) {
+        if (result.classification() == TimingResult.MISSED) return "-- ms";
+        return String.format("%.0f ms", Math.max(0, result.millis()));
     }
 
     private void clearIfExpired(ModConfig cfg) {

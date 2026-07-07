@@ -4,8 +4,12 @@
   "version": "${version}",
   "name": "JumpReset",
   "description": "PvP jump reset timing trainer with configurable HUD. Press K to open settings.",
-  "authors": ["JumpReset"],
-  "contact": {},
+  "authors": ["sombreror"],
+  "contact": {
+    "homepage": "https://github.com/sombreror/JumpReset-mod",
+    "sources": "https://github.com/sombreror/JumpReset-mod",
+    "issues": "https://github.com/sombreror/JumpReset-mod/issues"
+  },
   "license": "MIT",
   "environment": "client",
   "entrypoints": {

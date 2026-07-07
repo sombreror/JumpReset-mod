@@ -12,13 +12,7 @@ import net.minecraft.client.gui.widget.SliderWidget;
 import net.minecraft.text.Text;
 
 /**
- * ConfigScreen — v2.0.0
- *
- * Changes from v1.9.0:
- *  - General tab: "Reset Stats" button clears the SessionStats aggregate.
- *  - General tab: session summary (attempts, hit rate, streak) drawn as text
- *    in the gap between the last control and the HUD preview area.
- *  - Title bar updated to v2.0.
+ * In-game settings screen (default key: K).
  *
  * Layout (tabs):
  *   [General] [Display] [Timing] [Indicator]
@@ -30,6 +24,13 @@ import net.minecraft.text.Text;
  * problem from v1.7.0. The panel is visually compact and professional.
  */
 public class ConfigScreen extends Screen {
+
+    /** Mod version string read once from fabric.mod.json metadata. */
+    private static final String MOD_VERSION =
+            net.fabricmc.loader.api.FabricLoader.getInstance()
+                    .getModContainer(JumpResetMod.MOD_ID)
+                    .map(c -> c.getMetadata().getVersion().getFriendlyString())
+                    .orElse("dev");
 
     private final Screen parent;
 
@@ -43,6 +44,8 @@ public class ConfigScreen extends Screen {
     // ── Drag state ────────────────────────────────────────────────────────────
     private boolean dragging = false;
     private double  dragOffX = 0, dragOffY = 0;
+    /** Bounds {x, y, w, h} of the HUD preview as last drawn — the drag hit-box. */
+    private int[]   previewBounds = null;
 
     // ── Colors ────────────────────────────────────────────────────────────────
     private static final int C_PANEL     = 0xF00A0A1A;
@@ -137,7 +140,6 @@ public class ConfigScreen extends Screen {
         sld("Knockback", lx, y, slW, ModConfig.get().knockbackThreshold, 0.01, 0.20,
                 v -> ModConfig.get().knockbackThreshold = v,
                 v -> String.format("KB threshold: %.3f", v)); y += GAP;
-        // Session stats reset (v2.0.0)
         addDrawableChild(ButtonWidget.builder(
                 Text.literal("§cReset Session Stats"),
                 b -> JumpResetMod.tracker.sessionStats.reset())
@@ -273,8 +275,9 @@ public class ConfigScreen extends Screen {
     public boolean mouseClicked(Click click, boolean doubled) {
         if (super.mouseClicked(click, doubled)) return true;
         double mx = click.x(), my = click.y();
-        if (click.button() == 0 && !ModConfig.get().hudLocked && inside((int) mx, (int) my, hudBounds())) {
-            int[] b = hudBounds();
+        int[]  b  = previewBounds;
+        if (click.button() == 0 && b != null && !ModConfig.get().hudLocked
+                && inside((int) mx, (int) my, b)) {
             dragging = true;
             dragOffX = mx - b[0];
             dragOffY = my - b[1];
@@ -285,13 +288,11 @@ public class ConfigScreen extends Screen {
 
     @Override
     public boolean mouseDragged(Click click, double offsetX, double offsetY) {
-        if (dragging && click.button() == 0 && !ModConfig.get().hudLocked) {
+        int[] b = previewBounds;
+        if (dragging && click.button() == 0 && b != null && !ModConfig.get().hudLocked) {
             ModConfig cfg = ModConfig.get();
-            float s  = cfg.hudScale;
-            int   pw = (int) (JumpResetHud.BASE_W * s);
-            int   ph = (int) (JumpResetHud.BASE_H * s);
-            cfg.hudX = clampF((float) ((click.x() - dragOffX + pw * 0.5f) / width),  0.02f, 0.98f);
-            cfg.hudY = clampF((float) ((click.y() - dragOffY + ph * 0.5f) / height), 0.02f, 0.98f);
+            cfg.hudX = clampF((float) ((click.x() - dragOffX + b[2] * 0.5f) / width),  0.02f, 0.98f);
+            cfg.hudY = clampF((float) ((click.y() - dragOffY + b[3] * 0.5f) / height), 0.02f, 0.98f);
             return true;
         }
         return super.mouseDragged(click, offsetX, offsetY);
@@ -337,8 +338,8 @@ public class ConfigScreen extends Screen {
         ctx.fill(panelX, previewY, panelX + panelW, footerY, 0x44000000);
         ctx.fill(panelX, previewY, panelX + panelW, previewY + 1, C_DIVIDER);
 
-        // Title text
-        String title = "⚙  JumpReset  v2.0";
+        // Title text (version read from mod metadata, never hardcoded)
+        String title = "⚙  JumpReset  v" + MOD_VERSION;
         int tw = textRenderer.getWidth(title);
         ctx.drawText(textRenderer, Text.literal(title),
                 width / 2 - tw / 2, panelY + (TITLE_H - 8) / 2, C_TITLE, true);
@@ -350,14 +351,20 @@ public class ConfigScreen extends Screen {
         // Draw all widgets
         super.render(ctx, mx, my, delta);
 
-        // Session stats summary (v2.0.0) — shown in General tab below controls
+        // Active-tab accent underline (drawn after the widgets so the opaque
+        // vanilla button textures can't cover it)
+        ctx.fill(panelX + activeTab * tabW + 2, tabY + TAB_H - 2,
+                 panelX + (activeTab + 1) * tabW - 2, tabY + TAB_H,
+                 ModConfig.get().colorPerfect);
+
+        // Session stats summary — shown in General tab below controls
         if (activeTab == 0) renderSessionStats(ctx);
 
-        // HUD preview in the preview area (draggable when not locked)
+        // HUD preview in the preview area (draggable when not locked).
+        // The returned bounds double as the drag hit-box for the mouse events.
         boolean locked  = ModConfig.get().hudLocked;
-        int[]   bounds  = hudBounds();
-        boolean hovered = inside(mx, my, bounds);
-        JumpResetMod.hud.renderPreview(ctx, MinecraftClient.getInstance(),
+        boolean hovered = previewBounds != null && inside(mx, my, previewBounds);
+        previewBounds   = JumpResetMod.hud.renderPreview(ctx, MinecraftClient.getInstance(),
                 !locked && (dragging || hovered));
 
         // Drag hint
@@ -372,7 +379,7 @@ public class ConfigScreen extends Screen {
     @Override public boolean shouldPause() { return false; }
     @Override public void    close()       { if (client != null) client.setScreen(parent); }
 
-    // ── Session stats display (v2.0.0) ────────────────────────────────────────
+    // ── Session stats display ─────────────────────────────────────────────────
 
     /**
      * Draw a compact session summary in the gap between the last General-tab
@@ -443,14 +450,6 @@ public class ConfigScreen extends Screen {
     }
 
     // ── Geometry helpers ──────────────────────────────────────────────────────
-
-    private int[] hudBounds() {
-        ModConfig cfg = ModConfig.get();
-        float s  = cfg.hudScale;
-        int   pw = (int)(JumpResetHud.BASE_W * s);
-        int   ph = (int)(JumpResetHud.BASE_H * s);
-        return new int[]{ (int)(cfg.hudX * width) - pw/2, (int)(cfg.hudY * height) - ph/2, pw, ph };
-    }
 
     private static boolean inside(int x, int y, int[] b) {
         return x >= b[0] && x <= b[0]+b[2] && y >= b[1] && y <= b[1]+b[3];

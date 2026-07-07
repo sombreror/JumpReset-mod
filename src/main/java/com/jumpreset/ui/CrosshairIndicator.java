@@ -11,12 +11,6 @@ import net.minecraft.client.gui.DrawContext;
 import static com.jumpreset.util.RenderUtil.blendA;
 
 /**
- * CrosshairIndicator — v2.0.0
- *
- * Fix (v2.0.0): the F1 / hide-HUD guard was previously a no-op empty block.
- *   `if (!client.options.hudHidden) { }` does nothing — the triangle was
- *   always drawn even in F1 mode. Corrected to `if (client.options.hudHidden) return;`.
- *
  * Renders a small downward-pointing triangle above the crosshair.
  * The triangle color reflects the current jump reset system state:
  *
@@ -95,6 +89,8 @@ public class CrosshairIndicator {
         int tipY   = cy - cfg.crosshairIndicatorY;    // tip of triangle (lowest point)
         int baseY  = tipY - size;                      // widest row (topmost)
 
+        // 1-px offset shadow first, for contrast against bright backgrounds
+        drawTriangleDown(ctx, cx + 1, baseY + 1, size, blendA(0xFF000000, alpha / 2));
         drawTriangleDown(ctx, cx, baseY, size, blendA(color, alpha));
     }
 

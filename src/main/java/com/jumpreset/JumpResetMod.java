@@ -79,6 +79,7 @@ public class JumpResetMod implements ClientModInitializer {
                 (ctx, tickCounter) -> {
                     MinecraftClient client = MinecraftClient.getInstance();
                     if (client.player != null
+                            && !client.options.hudHidden
                             && !(client.currentScreen instanceof ConfigScreen)) {
                         hud.render(ctx, client);
                     }
@@ -93,6 +94,7 @@ public class JumpResetMod implements ClientModInitializer {
                 (ctx, tickCounter) -> {
                     MinecraftClient client = MinecraftClient.getInstance();
                     if (client.player != null
+                            && !client.options.hudHidden
                             && !(client.currentScreen instanceof ConfigScreen)) {
                         crosshairIndicator.render(ctx, client);
                     }

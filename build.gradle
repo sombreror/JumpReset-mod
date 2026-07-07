@@ -18,11 +18,8 @@ base {
     archivesName = project.archives_base_name
 }
 
-// ── Repositories ──────────────────────────────────────────────────────────────
-repositories {
-}
-
 // ── Dependencies ──────────────────────────────────────────────────────────────
+// (Repositories are provided by the fabric-loom plugin.)
 dependencies {
     minecraft   "com.mojang:minecraft:${project.minecraft_version}"
     mappings    "net.fabricmc:yarn:${project.yarn_mappings}:v2"
@@ -73,6 +70,7 @@ remapJar {
 }
 
 // Also rename the sources jar to match the versioning convention.
-tasks.named("sourcesJar") {
+// Loom's remapSourcesJar produces the final artifact, so the name goes there.
+remapSourcesJar {
     archiveFileName = "${project.archives_base_name}-v${project.mod_version}-sources.jar"
 }

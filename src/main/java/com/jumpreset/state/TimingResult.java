@@ -3,8 +3,6 @@ package com.jumpreset.state;
 import com.jumpreset.config.ModConfig;
 
 /**
- * TimingResult — v1.4.0
- *
  * Five classifications, each with actionable meaning:
  *
  *  PERFECT   — ideal timing, full score                 → green

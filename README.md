@@ -4,7 +4,7 @@
 [![Fabric](https://img.shields.io/badge/Loader-Fabric%200.18%2B-ffb347)](#)
 [![Java](https://img.shields.io/badge/Java-21-orange?logo=openjdk&logoColor=white)](#)
 [![Environment](https://img.shields.io/badge/Environment-Client--side-blue)](#)
-[![Version](https://img.shields.io/badge/Version-v2.5.0-blueviolet)](#)
+[![Version](https://img.shields.io/badge/Version-v3.0.0-blueviolet)](#)
 [![License](https://img.shields.io/badge/License-MIT-lightgrey)](#)
 
 > **Accurate jump-reset feedback for PvP — powered by pre-physics velocity analysis.**
@@ -229,26 +229,29 @@ Not with this release. This build targets 1.21.11 specifically. Older builds may
 ```
 com.jumpreset
 ├── JumpResetMod            ClientModInitializer; singleton HUD/tracker refs;
-│                           volatile preMoveVelocityY written by Mixin
+│                           volatile preMoveVelocityY written by the mixin
 ├── config
-│   └── ModConfig           GSON-backed config; .minecraft/config/jumpreset.json
+│   ├── ModConfig           GSON-backed config; .minecraft/config/jumpreset.json
+│   ├── FeedbackStyle       MINIMAL | DETAILED | BAR
+│   └── DebugDisplayMode    COMPACT | FULL
 ├── mixin
-│   └── PlayerMoveMixin     @Inject into LivingEntity.move() HEAD;
-│                           writes JumpResetMod.preMoveVelocityY
+│   └── ClientPlayerEntityMixin  @Inject into ClientPlayerEntity.move() HEAD;
+│                                writes JumpResetMod.preMoveVelocityY
 ├── state
 │   ├── JumpResetTracker    Main tick loop; hit/jump detection; state machine
 │   ├── JumpResetResult     Immutable record: ms, ticks, score, classification, ping
 │   ├── TimingResult        Enum (PERFECT/GOOD/LATE/TOO_EARLY/MISSED) + scoring
 │   ├── SessionStats        In-memory session aggregate; never persisted
-│   ├── TimingHistory       Ring buffer of the last N JumpResetResult values
 │   ├── HitSnapshot         Snapshot of state at hit registration tick
 │   └── TrackingState       IDLE | WINDOW_ACTIVE
-└── ui
-    ├── JumpResetHud        HUD rendering — minimal / detailed / bar
-    ├── ConfigScreen        In-game 4-tab settings screen
-    ├── CrosshairIndicator  Triangle overlay above crosshair
-    └── util
-        └── Easing          Quadratic-out interpolation for slide-in animation
+├── ui
+│   ├── JumpResetHud        HUD rendering — minimal / detailed / bar
+│   ├── ConfigScreen        In-game 4-tab settings screen
+│   ├── CrosshairIndicator  Triangle overlay above crosshair
+│   └── TimingHistory       Ring buffer of the last N results (history strip)
+└── util
+    ├── Easing              Cubic/quartic easing for HUD animations
+    └── RenderUtil          Shared fill / border / blendA / scaled-text primitives
 ```
 
 ---
@@ -398,19 +401,85 @@ Config file: `.minecraft/config/jumpreset.json`
 **Prerequisites:** JDK 21, internet access on first build.
 
 ```bash
-git clone https://github.com/your-username/JumpReset-mod.git
+git clone https://github.com/sombreror/JumpReset-mod.git
 cd JumpReset-mod
 chmod +x gradlew
 ./gradlew build
 ```
 
-Output JAR: `build/libs/jumpreset-v2.5.0.jar`
+Output JAR: `build/libs/jumpreset-v3.0.0.jar`
 
 Uses Fabric Loom 1.14.10 and Gradle 9.2. Java toolchain is fixed to JDK 21.
 
 ---
 
 ## Changelog
+
+### v3.0.0
+
+A polish release: every UI surface reviewed, several long-standing HUD/config
+bugs fixed, and the visual layer refreshed. Detection pipeline is unchanged.
+
+#### Bug Fixes
+
+**HUD respected F1 / hide-HUD mode only for the crosshair triangle**  
+The main timing panel and the history strip were still drawn with the HUD
+hidden. Both HUD render callbacks now check `options.hudHidden`.
+
+**Disabling the mod left the HUD partially alive**  
+With *Mod Enabled* off, the tracker stopped but the debug overlay and the
+history strip kept rendering. `JumpResetHud.render()` now exits immediately
+when the mod is disabled.
+
+**Saving could persist inconsistent timing thresholds**  
+The Timing-tab sliders write raw values, so *Good ≤* could be dragged below
+*Perfect ≤* and saved that way; the broken ordering then stayed active until
+the next load. `ModConfig.save()` now runs `sanitize()` before writing, the
+same normalization applied on load.
+
+**HUD preview drag hit-box ignored the active style**  
+The config screen always used the Detailed panel's 128×52 box for drag
+detection, even when the Bar style (148 px wide) or the small Minimal pill was
+active. The drag hit-box now comes from the actual drawn preview bounds.
+
+**Config screen title no longer hardcoded**  
+The title bar read "v2.0" regardless of the installed version. The version is
+now read from the mod metadata at runtime.
+
+**"Show Missed" displayed a bogus `9999 ms` readout**  
+MISSED results have no meaningful timing; the ms line now shows `-- ms`.
+
+**Config loading hardened**  
+Any runtime exception thrown while parsing `jumpreset.json` (not only
+`JsonSyntaxException`) now falls back to defaults instead of crashing startup.
+
+**Sources jar naming**  
+`remapSourcesJar` (Loom's final artifact) is now the renamed task, so the
+sources jar is correctly published as `jumpreset-v3.0.0-sources.jar`.
+
+#### Visual Improvements
+
+- **Style-aware config preview.** The draggable preview now renders the actual
+  active style — Minimal pill, Detailed panel, or a live Timing-Bar mock with
+  zones and marker — instead of always showing the Detailed panel.
+- **Drop shadows** on the Detailed panel, Bar panel, Minimal pill and the
+  crosshair triangle for contrast against bright backgrounds.
+- **History strip:** the newest cell gets a subtle outline so the latest
+  attempt is readable at a glance; the standalone strip now anchors correctly
+  under all three HUD styles (previously it assumed the Detailed panel height).
+- **Config screen:** the active tab shows a green accent underline (the old
+  highlight fill was hidden behind the opaque vanilla button textures).
+
+#### Housekeeping
+
+- Timing-bar zone/marker drawing extracted into a shared helper used by both
+  the HUD and the preview (no more drift between the two).
+- Stale per-version changelog notes removed from class Javadoc (history lives
+  here in the README).
+- `fabric.mod.json`: real author and GitHub homepage/sources/issues links.
+- `gradlew.bat` renormalized to match `.gitattributes` (was permanently dirty).
+
+---
 
 ### v2.5.0
 

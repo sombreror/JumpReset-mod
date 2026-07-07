@@ -16,9 +16,7 @@ import static com.jumpreset.util.RenderUtil.border;
 import static com.jumpreset.util.RenderUtil.fill;
 
 /**
- * TimingHistory — v2.0.0 (logic unchanged from v1.5.0)
- *
- * Displays a strip of the last N jump reset results as colored dots/squares.
+ * Displays a strip of the last N jump reset results as colored squares.
  * Positioned just below the main HUD panel, or independently.
  *
  * Layout example (5 attempts, left = oldest):
@@ -82,8 +80,12 @@ public class TimingHistory {
             int           cx = startX + i * (CELL_SIZE + CELL_GAP);
             int           cy = bgY + 3;
 
-            // Colored square
+            // Colored square; the newest entry gets a subtle outline so the
+            // most recent attempt is readable at a glance.
             fill(ctx, cx, cy, CELL_SIZE, CELL_SIZE, blendA(r.configColor(), baseAlpha));
+            if (j == arr.length - 1) {
+                border(ctx, cx - 1, cy - 1, CELL_SIZE + 2, CELL_SIZE + 2, blendA(0x90FFFFFF, baseAlpha));
+            }
 
             // 1-letter abbreviation below
             String abbr = abbrev(r);
